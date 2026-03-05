@@ -3,11 +3,6 @@ import pandas as pd
 import numpy as np
 import joblib
 import os
-from sklearn.ensemble import GradientBoostingClassifier, RandomForestClassifier
-from sklearn.linear_model import LogisticRegression
-from sklearn.preprocessing import StandardScaler
-from sklearn.model_selection import train_test_split
-from imblearn.over_sampling import SMOTE
 
 # ─────────────────────────────────────────────
 # PAGE CONFIG
@@ -38,60 +33,38 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # ─────────────────────────────────────────────
-# MODEL TRAINING / LOADING
+# MODEL LOADING (no upload needed)
 # ─────────────────────────────────────────────
 MODEL_PATH    = "fetal_model.joblib"
 SCALER_PATH   = "fetal_scaler.joblib"
 FEATURES_PATH = "fetal_features.joblib"
 
-SELECTED_FEATURES = [
-    'abnormal_short_term_variability',
-    'percentage_of_time_with_abnormal_long_term_variability',
-    'mean_value_of_short_term_variability',
-    'histogram_width',
-    'histogram_mean',
-    'histogram_median',
-    'histogram_mode',
-    'mean_value_of_long_term_variability',
-    'accelerations',
-    'baseline value'
-]
-
-def train_and_save(df):
-    X = df.drop(columns=['fetal_health'])
-    y = df['fetal_health']
-    X_train, X_test, y_train, y_test = train_test_split(
-        X, y, test_size=0.2, stratify=y, random_state=42
-    )
-    scaler = StandardScaler()
-    X_train_scaled = pd.DataFrame(scaler.fit_transform(X_train), columns=X_train.columns)
-
-    sm = SMOTE(random_state=42)
-    X_bal, y_bal = sm.fit_resample(X_train_scaled, y_train)
-    X_bal = pd.DataFrame(X_bal, columns=X_train.columns)
-
-    # Use only selected features
-    available = [f for f in SELECTED_FEATURES if f in X_bal.columns]
-    X_sel = X_bal[available]
-
-    model = GradientBoostingClassifier(n_estimators=200, random_state=42)
-    model.fit(X_sel, y_bal)
-
-    joblib.dump(model,     MODEL_PATH)
-    joblib.dump(scaler,    SCALER_PATH)
-    joblib.dump(available, FEATURES_PATH)
-    return model, scaler, available
-
 @st.cache_resource
-def load_model(csv_path):
-    df = pd.read_csv(csv_path)
-    if os.path.exists(MODEL_PATH) and os.path.exists(SCALER_PATH) and os.path.exists(FEATURES_PATH):
-        model    = joblib.load(MODEL_PATH)
-        scaler   = joblib.load(SCALER_PATH)
-        features = joblib.load(FEATURES_PATH)
-    else:
-        model, scaler, features = train_and_save(df)
+def load_model():
+    model    = joblib.load(MODEL_PATH)
+    scaler   = joblib.load(SCALER_PATH)
+    features = joblib.load(FEATURES_PATH)
     return model, scaler, features
+
+try:
+    model, scaler, features = load_model()
+except Exception as e:
+    st.error(f"❌ Error loading model: {e}")
+    st.stop()
+
+# ─────────────────────────────────────────────
+# SIDEBAR — INFO ONLY
+# ─────────────────────────────────────────────
+with st.sidebar:
+    st.header("ℹ️ About")
+    st.markdown("This app uses a pre-trained **Gradient Boosting** model trained on Cardiotocogram (CTG) data.")
+    st.success("✅ Model loaded and ready!")
+    st.info(f"Using **{len(features)}** selected features")
+    st.markdown("---")
+    st.markdown("**Target Classes:**")
+    st.markdown("🟢 **1 – Normal**")
+    st.markdown("🟡 **2 – Suspect**")
+    st.markdown("🔴 **3 – Pathological**")
 
 # ─────────────────────────────────────────────
 # HEADER
@@ -105,40 +78,8 @@ st.markdown("""
 st.divider()
 
 # ─────────────────────────────────────────────
-# SIDEBAR — CSV UPLOAD & MODEL LOADING
-# ─────────────────────────────────────────────
-with st.sidebar:
-    st.header("⚙️ Setup")
-    st.markdown("Upload the **fetalhealth.csv** dataset to train the model.")
-    csv_file = st.file_uploader("Upload fetalhealth.csv", type=["csv"])
-
-    if csv_file:
-        df_raw = pd.read_csv(csv_file)
-        df_raw.drop_duplicates(inplace=True)
-        model, scaler, features = load_model.__wrapped__(csv_file.name) \
-            if False else (lambda: (None, None, None))()
-
-        # retrain on each upload since we can't cache file objects
-        model, scaler, features = train_and_save(df_raw)
-        st.success(f"✅ Model trained on {len(df_raw)} records")
-        st.info(f"Using **{len(features)}** selected features")
-    else:
-        st.warning("Please upload the CSV file to enable predictions.")
-        model, scaler, features = None, None, None
-
-    st.markdown("---")
-    st.markdown("**Target Classes:**")
-    st.markdown("🟢 **1 – Normal**")
-    st.markdown("🟡 **2 – Suspect**")
-    st.markdown("🔴 **3 – Pathological**")
-
-# ─────────────────────────────────────────────
 # MAIN — INPUT FORM
 # ─────────────────────────────────────────────
-if model is None:
-    st.info("👈 Upload your dataset in the sidebar to get started.")
-    st.stop()
-
 st.subheader("📋 Enter Patient CTG Readings")
 st.markdown("Adjust the sliders below to match the patient's CTG measurements.")
 
@@ -202,16 +143,16 @@ with col2:
 # BUILD INPUT DATAFRAME
 # ─────────────────────────────────────────────
 input_map = {
-    'baseline value':                                      baseline_value,
-    'accelerations':                                       accelerations,
-    'abnormal_short_term_variability':                     abnormal_stv,
-    'mean_value_of_short_term_variability':                mean_stv,
+    'baseline value':                                         baseline_value,
+    'accelerations':                                          accelerations,
+    'abnormal_short_term_variability':                        abnormal_stv,
+    'mean_value_of_short_term_variability':                   mean_stv,
     'percentage_of_time_with_abnormal_long_term_variability': pct_abnormal_ltv,
-    'mean_value_of_long_term_variability':                 mean_ltv,
-    'histogram_width':                                     histogram_width,
-    'histogram_mode':                                      histogram_mode,
-    'histogram_mean':                                      histogram_mean,
-    'histogram_median':                                    histogram_median,
+    'mean_value_of_long_term_variability':                    mean_ltv,
+    'histogram_width':                                        histogram_width,
+    'histogram_mode':                                         histogram_mode,
+    'histogram_mean':                                         histogram_mean,
+    'histogram_median':                                       histogram_median,
 }
 
 # ─────────────────────────────────────────────
@@ -221,13 +162,11 @@ st.divider()
 predict_btn = st.button("🔍 Predict Fetal Health", type="primary", use_container_width=True)
 
 if predict_btn:
-    # Build full feature vector (fill missing with 0)
     all_feature_names = scaler.feature_names_in_ if hasattr(scaler, 'feature_names_in_') else features
     row = {f: 0.0 for f in all_feature_names}
     row.update(input_map)
 
     input_df_full = pd.DataFrame([row])
-    # Scale
     try:
         input_scaled = pd.DataFrame(
             scaler.transform(input_df_full),
@@ -239,11 +178,9 @@ if predict_btn:
             columns=features
         )
 
-    # Select features
     input_selected = input_scaled[features]
 
-    # Predict
-    probabilities = model.predict_proba(input_selected)[0]
+    probabilities   = model.predict_proba(input_selected)[0]
     predicted_class = model.predict(input_selected)[0]
 
     class_labels = {1: "Normal", 2: "Suspect", 3: "Pathological"}
@@ -257,7 +194,6 @@ if predict_btn:
 
     st.subheader("📊 Prediction Results")
 
-    # Main result box
     st.markdown(f"""
     <div class="result-box {pred_style}">
         {pred_icon} The model predicts a <u>{pred_prob:.2f}%</u> probability that this patient's 
@@ -269,9 +205,9 @@ if predict_btn:
 
     colors = {1: "#28a745", 2: "#ffc107", 3: "#dc3545"}
     for i, (cls, label) in enumerate({1: "Normal", 2: "Suspect", 3: "Pathological"}.items()):
-        prob_pct = probabilities[i] * 100
+        prob_pct  = probabilities[i] * 100
         bar_color = colors[cls]
-        icon = class_icons[cls]
+        icon      = class_icons[cls]
         st.markdown(f"**{icon} {label}**")
         st.markdown(f"""
         <div style="background:#e9ecef; border-radius:6px; height:28px; width:100%;">
@@ -284,7 +220,6 @@ if predict_btn:
         """, unsafe_allow_html=True)
         st.markdown("")
 
-    # Clinical guidance
     st.markdown("#### 💡 Clinical Guidance")
     guidance = {
         1: "✅ **Normal**: Fetal condition appears healthy. Continue routine monitoring and antenatal care.",
